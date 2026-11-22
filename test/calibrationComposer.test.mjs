@@ -41,3 +41,34 @@ test('handleCalibrationAnswer saves the verdict and advances the onboarding stat
     aiService.evaluateCalibrationAnswer = originalEvaluate;
   }
 });
+
+test('handleCalibrationAnswer displays adapter status updates in the loading message', async () => {
+  const originalEvaluate = aiService.evaluateCalibrationAnswer;
+  const edits = [];
+  aiService.evaluateCalibrationAnswer = async (_answer, onStatusUpdate) => {
+    await onStatusUpdate('⚠️ [OpenRouter] model<free> → 429, следующая модель...');
+    return {
+      verdict: { english_score: 57, level: 'B1', message: 'Good.' },
+    };
+  };
+
+  const ctx = {
+    message: { text: 'I am checking the terms.' },
+    session: { onboardingState: ONBOARDING_STATES.DIAGNOSTIC_BASIC_SELECTED },
+    reply: async () => ({ chat: { id: 42 }, message_id: 7 }),
+    api: {
+      editMessageText: async (...args) => edits.push(args),
+    },
+  };
+
+  try {
+    await handleCalibrationAnswer(ctx);
+
+    assert.equal(edits.length, 1);
+    assert.deepEqual(edits[0].slice(0, 2), [42, 7]);
+    assert.match(edits[0][2], /model&lt;free&gt;/);
+    assert.equal(edits[0][3].parse_mode, 'HTML');
+  } finally {
+    aiService.evaluateCalibrationAnswer = originalEvaluate;
+  }
+});

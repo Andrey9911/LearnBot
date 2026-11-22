@@ -1,13 +1,13 @@
 import 'dotenv/config';
 
 const DEFAULT_OPENROUTER_MODELS = [
-  'openrouter/free',
-  'inclusionai/ling-3.0-flash-fin:free',
-  'google/gemma-4-26b-a4b-it:free',
   'google/gemma-4-31b-it:free',
-  'meta-llama/llama-3.2-3b-instruct:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'liquid/lfm-3-1.7b:free',
+  'particle-ai/particle-1:free',
   'qwen/qwen3-next-80b-a3b-instruct:free',
   'cohere/north-mini-code:free',
+  'openrouter/free',
 ];
 
 /** Parses a comma-separated model route while preserving its priority order. */

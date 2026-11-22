@@ -8,6 +8,7 @@ import { ONBOARDING_MESSAGES } from '../views/onboardingMessages.mjs';
 import { aiService } from '../../services/llm/aiService.mjs';
 import { calibrationResultKeyboard } from '../keyboards/courseKeyboards.mjs';
 import { buildCalibrationResult } from '../views/courseMessages.mjs';
+import { createStatusUpdater } from '../../core/baseFunc.mjs';
 
 export const calibrationComposer = new Composer();
 
@@ -18,9 +19,17 @@ export async function handleCalibrationAnswer(ctx) {
   }
 
   ctx.session.onboardingState = ONBOARDING_STATES.CALIBRATION_ANSWER_RECEIVED;
-  await ctx.reply(ONBOARDING_MESSAGES.ANSWER_RECEIVED);
+  const loadingMessage = await ctx.reply(ONBOARDING_MESSAGES.ANSWER_RECEIVED);
+  const onStatusUpdate = createStatusUpdater(
+    ctx,
+    loadingMessage,
+    ONBOARDING_MESSAGES.ANSWER_RECEIVED,
+  );
 
-  const { verdict } = await aiService.evaluateCalibrationAnswer(ctx, ctx.message.text);
+  const { verdict } = await aiService.evaluateCalibrationAnswer(
+    ctx.message.text,
+    onStatusUpdate,
+  );
   ctx.session.englishScore = verdict.english_score;
   ctx.session.englishLevel = verdict.level;
   ctx.session.onboardingState = ONBOARDING_STATES.CALIBRATION_EVALUATED;

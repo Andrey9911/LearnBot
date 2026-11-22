@@ -1,5 +1,5 @@
 import { config } from '../../core/config.mjs';
-import { updateStatus } from '../../core/baseFunc.mjs';
+import { requestWithModelFallback } from './openRouterAdapter.mjs';
 
 
 const CONTENT_QUALITY_SYSTEM_PROMPT = `You create adaptive practical English content for adult learners.
@@ -21,7 +21,7 @@ Follow the task-specific criteria and return only the requested format.`;
  */
 
 export class AIService {
-  /** Creates the future OpenRouter adapter with an ordered fallback route. */
+  /** Creates an OpenRouter client with an ordered fallback route. */
   constructor() {
     this.apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
     this.apiKey = config.openRouterApiKey;
@@ -29,100 +29,31 @@ export class AIService {
   }
 
   /**
-   * Defines the single entry point for future OpenRouter model routing.
-   * @param {ChatOptions} _options
-   * @param {((message: string) => Promise<void>)|null} [_onStatusUpdate]
-   * @returns {Promise<never>}
+   * Defines the single entry point for OpenRouter model routing.
+   * @param {ChatOptions} opts
+   * @param {((message: string) => Promise<void>)|null} [onStatusUpdate]
+   * @returns {Promise<object>}
    */
-  async chatWithModelFallback(ctx, opts, _onStatusUpdate = null) {
-    const { messages, max_tokens, temperature } = opts;
-    let lastErr = null;
-
-    for (let i = 0; i < this.models.length; i++) {
-      const model = this.models[i];
-      try {
-        const response = await fetch(this.apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.apiKey}`,
-          },
-          body: JSON.stringify({
-            model,
-            messages,
-            max_tokens,
-            temperature,
-            ...(opts.response_format ? { response_format: opts.response_format } : {})
-          }),
-        });
-
-        const text = await response.text();
-        console.log(`OpenRouter response for model ${model}:`, text);
-        let data;
-        try {
-          data = text ? JSON.parse(text) : {};
-        } catch {
-          lastErr = new Error(`OpenRouter: невалидный JSON (${model})`);
-          if (shouldTryNextModel(response.status, {})) continue;
-          throw lastErr;
-        }
-
-        if (!response.ok) {
-          if (ROTATE_STATUSES.has(response.status)) {
-            // Если получили 429 или 5xx, уведомляем интерфейс через колбэк
-            if (updateStatus) {
-              await updateStatus(ctx, `⚠️ [OpenRouter] ${model} → ${response.status}, следующая модель...`);
-            }
-            continue;
-          }
-          lastErr = new Error(
-            data?.error?.message || `HTTP ${response.status}`,
-          );
-          if (shouldTryNextModel(response.status, data)) {
-            console.warn(
-              `[OpenRouter] ${model} → ${response.status}, следующая модель…`,
-            );
-            if (response.status === 429) await sleep(350 + i * 150);
-            else await sleep(120);
-            continue;
-          }
-          throw lastErr;
-        }
-
-        if (data?.choices?.[0]?.message?.content != null) {
-          console.log(`[OpenRouter] ${model} response content:`, data.choices[0].message.content);
-          return data;
-        }
-
-        if (data.error && shouldTryNextModel(200, data)) {
-          console.warn(
-            `[OpenRouter] ${model} error in body, следующая модель…`,
-            data.error,
-          );
-          lastErr = new Error(data.error.message || 'OpenRouter error');
-          await sleep(200);
-          continue;
-        }
-
-        return data;
-      } catch (err) {
-        if (updateStatus) {
-          await updateStatus(ctx, `❌ Ошибка сети на ${model}, пробую другую...`);
-        }
-      }
-    }
-    // throw new Error('OpenRouter adapter is a scaffold and is not implemented yet.');
+  async chatWithModelFallback(opts, onStatusUpdate = null) {
+    return requestWithModelFallback({
+      apiUrl: this.apiUrl,
+      apiKey: this.apiKey,
+      models: this.models,
+      options: opts,
+      onStatusUpdate,
+    });
   }
 
   /**
    * Evaluates a learner's calibration answer against a compact CEFR rubric.
    * @param {string} answer
+   * @param {((message: string) => Promise<void>)|null} [onStatusUpdate]
    * @returns {Promise<{verdict: {english_score: number, level: string, message: string}}>} 
    */
-  async evaluateCalibrationAnswer(ctx, answer) {
+  async evaluateCalibrationAnswer(answer, onStatusUpdate = null) {
     
 
-    const response = await this.chatWithModelFallback(ctx, {
+    const response = await this.chatWithModelFallback({
       messages: [
         { role: 'system', content: CONTENT_QUALITY_SYSTEM_PROMPT },
         {
@@ -133,7 +64,7 @@ export class AIService {
       max_tokens: 1000,
       temperature: 0,
       response_format: { type: 'json_object' },
-    });
+    }, onStatusUpdate);
 
     console.log('AIService.evaluateCalibrationAnswer response:', response);
     return parseCalibrationVerdict(response);
